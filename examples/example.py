@@ -47,6 +47,8 @@ def main():
 
     client.close()
 
+def test_httpx():
+    main()
 
 if __name__ == "__main__":
     main()
