@@ -19,13 +19,13 @@ class BaseHttpClient:
     """
 
     def __init__(
-            self,
-            base_url: str,
-            timeout: float = 10.0,
-            verify: bool = True,
-            auth_token: str | None = None,
-            default_headers: Dict[str, str] | None = None,
-            retry_decorator: Callable | None = None,
+        self,
+        base_url: str,
+        timeout: float = 10.0,
+        verify: bool = True,
+        auth_token: str | None = None,
+        default_headers: Dict[str, str] | None = None,
+        retry_decorator: Callable | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.retry_decorator = retry_decorator

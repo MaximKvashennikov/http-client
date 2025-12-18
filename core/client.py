@@ -30,7 +30,7 @@ class HttpClient(BaseHttpClient):
             allure.attach(
                 body=json.dumps(request_data, indent=2, ensure_ascii=False),
                 name=f"Request: {method} {url}",
-                attachment_type=allure.attachment_type.JSON
+                attachment_type=allure.attachment_type.JSON,
             )
 
     @staticmethod
@@ -38,17 +38,19 @@ class HttpClient(BaseHttpClient):
         """Attach cURL command to Allure report."""
 
         try:
-            curl_command = Curlify(response.request).to_curl().replace("-d 'b'''", "-d 'None'")
+            curl_command = (
+                Curlify(response.request).to_curl().replace("-d 'b'''", "-d 'None'")
+            )
             allure.attach(
                 body=curl_command,
                 name="cURL Command",
-                attachment_type=allure.attachment_type.TEXT
+                attachment_type=allure.attachment_type.TEXT,
             )
         except Exception as e:
             allure.attach(
                 body=f"Failed to generate cURL: {str(e)}",
                 name="cURL Error",
-                attachment_type=allure.attachment_type.TEXT
+                attachment_type=allure.attachment_type.TEXT,
             )
 
     @staticmethod
@@ -58,19 +60,19 @@ class HttpClient(BaseHttpClient):
         response_info = {
             "status_code": response.status_code,
             "headers": dict(response.headers),
-            "body": response.json() if response.text else None
+            "body": response.json() if response.text else None,
         }
 
         allure.attach(
             body=json.dumps(response_info, indent=2, ensure_ascii=False),
             name=f"Response: {method} {url}",
-            attachment_type=allure.attachment_type.JSON
+            attachment_type=allure.attachment_type.JSON,
         )
 
         allure.attach(
             body=f"Status: {response.status_code}\n\n{response.text}",
             name=f"Response Raw: {method} {url}",
-            attachment_type=allure.attachment_type.TEXT
+            attachment_type=allure.attachment_type.TEXT,
         )
 
     @allure.step("{method} {url}")
@@ -134,11 +136,12 @@ class HttpClient(BaseHttpClient):
         **kwargs: Any,
     ):
         return self.send(
-            "GET", url,
+            "GET",
+            url,
             response_model=response_model,
             expected_status=expected_status,
             headers=headers,
-            **kwargs
+            **kwargs,
         )
 
     def post(
@@ -151,12 +154,13 @@ class HttpClient(BaseHttpClient):
         **kwargs: Any,
     ):
         return self.send(
-            "POST", url,
+            "POST",
+            url,
             request_model=request_model,
             response_model=response_model,
             expected_status=expected_status,
             headers=headers,
-            **kwargs
+            **kwargs,
         )
 
     def put(
@@ -169,12 +173,13 @@ class HttpClient(BaseHttpClient):
         **kwargs: Any,
     ):
         return self.send(
-            "PUT", url,
+            "PUT",
+            url,
             request_model=request_model,
             response_model=response_model,
             expected_status=expected_status,
             headers=headers,
-            **kwargs
+            **kwargs,
         )
 
     def patch(
@@ -187,12 +192,13 @@ class HttpClient(BaseHttpClient):
         **kwargs: Any,
     ):
         return self.send(
-            "PATCH", url,
+            "PATCH",
+            url,
             request_model=request_model,
             response_model=response_model,
             expected_status=expected_status,
             headers=headers,
-            **kwargs
+            **kwargs,
         )
 
     def delete(
@@ -204,9 +210,10 @@ class HttpClient(BaseHttpClient):
         **kwargs: Any,
     ):
         return self.send(
-            "DELETE", url,
+            "DELETE",
+            url,
             response_model=response_model,
             expected_status=expected_status,
             headers=headers,
-            **kwargs
+            **kwargs,
         )

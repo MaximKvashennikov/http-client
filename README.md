@@ -40,7 +40,7 @@ print(f"Created: {created.name}")  # ✅ Typed response
 
 ```bash
 
-pip install httpx pydantic tenacity
+pip install httpx pydantic tenacity allure-pytest curlify2
 
 # Clone repo and use
 ```
@@ -89,6 +89,8 @@ client = HttpClient(
 | `PATCH` | `client.patch("/users/1", request_model=partial)` |
 | `DELETE` | `client.delete("/users/1", expected_status=204)` |
 
+## 🔗 Allure result
+![img.png](examples/allure_example.png)
 ## 🔧 Custom Models
 
 ```python

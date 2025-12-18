@@ -14,15 +14,16 @@ client = HttpClient(
     base_url="https://petstore.swagger.io/v2",
     auth_token=None,  # у public API токен не нужен
     default_headers={"User-Agent": "qa-http-client/1.0"},
-    retry_decorator=retry_decorator
+    retry_decorator=retry_decorator,
 )
 
 pet_req = Pet(
     id=123456789,
     name="test-pet",
     photo_urls=["https://example.com/pet.jpg"],
-    status="available"
+    status="available",
 )
+
 
 def main():
     # POST /pet -> возвращает объект Pet и статус 200
@@ -30,16 +31,12 @@ def main():
         "/pet",
         request_model=pet_req,
         # response_model=Pet,
-        expected_status=200
+        expected_status=200,
     )
     print("Created:", created.json())
 
     # GET /pet/{petId}
-    fetched = client.get(
-        f"/pet/{pet_req.id}",
-        response_model=Pet,
-        expected_status=200
-    )
+    fetched = client.get(f"/pet/{pet_req.id}", response_model=Pet, expected_status=200)
     print("Fetched:", fetched)
 
     resp = client.delete(f"/pet/{pet_req.id}", expected_status=200)
@@ -47,8 +44,10 @@ def main():
 
     client.close()
 
+
 def test_httpx():
     main()
+
 
 if __name__ == "__main__":
     main()
