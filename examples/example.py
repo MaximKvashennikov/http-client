@@ -7,14 +7,13 @@ from core import HttpClient
 from examples.petstore_models import Pet
 
 # конфигурация retry (опционально)
-retry_decorator = retry(stop=stop_after_attempt(3), wait=wait_fixed(1))
+retry_decorator = retry(stop=stop_after_attempt(3), wait=wait_fixed(2), reraise=True)
 
 # создаём клиент — public petstore swagger (v2)
 client = HttpClient(
     base_url="https://petstore.swagger.io/v2",
     auth_token=None,  # у public API токен не нужен
     default_headers={"User-Agent": "qa-http-client/1.0"},
-    retry_decorator=retry_decorator,
 )
 
 pet_req = Pet(
@@ -32,6 +31,7 @@ def main():
         request_model=pet_req,
         # response_model=Pet,
         expected_status=200,
+        retry=retry_decorator,
     )
     print("Created:", created.json())
 

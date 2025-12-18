@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import httpx
-from typing import Callable, Dict, Any
+from typing import Dict, Any
 
 
 class BaseHttpClient:
@@ -11,7 +11,6 @@ class BaseHttpClient:
     Responsibilities:
         - configure httpx.Client
         - apply authorization
-        - apply retry decorator (if provided)
         - provide unified request() method for high-level client
 
     High-level functionality (validation, status checks, models)
@@ -25,10 +24,8 @@ class BaseHttpClient:
         verify: bool = True,
         auth_token: str | None = None,
         default_headers: Dict[str, str] | None = None,
-        retry_decorator: Callable | None = None,
     ):
         self.base_url = base_url.rstrip("/")
-        self.retry_decorator = retry_decorator
 
         headers = default_headers.copy() if default_headers else {}
 
@@ -42,18 +39,15 @@ class BaseHttpClient:
             headers=headers,
         )
 
-    def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+    def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         """
-        Execute a raw HTTP request with optional retry support.
+        Raw HTTP request with automatic status check.
+
+        :raises httpx.HTTPStatusError: If response status is 400-599
         """
-
-        def do():
-            return self.client.request(method, url, **kwargs)
-
-        if self.retry_decorator:
-            return self.retry_decorator(do)()
-
-        return do()
+        response = self.client.request(method, url, **kwargs)
+        response.raise_for_status()
+        return response
 
     def close(self) -> None:
         """Close underlying httpx.Client."""

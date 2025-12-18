@@ -4,9 +4,8 @@ import json
 import httpx
 import allure
 from curlify2 import Curlify
-from typing import Any
+from typing import Any, Callable
 from pydantic import ValidationError
-from .exceptions import UnexpectedStatusError
 from .base import BaseHttpClient
 from .types import ReqModel, RespModel
 
@@ -84,10 +83,24 @@ class HttpClient(BaseHttpClient):
         response_model: type[RespModel] | None = None,
         expected_status: int | None = None,
         headers: dict[str, str] | None = None,
+        retry: Callable | None = None,
         **kwargs: Any,
     ) -> RespModel | httpx.Response:
         """
-        Unified high-level request handler.
+        Unified high-level HTTP request handler with full feature set.
+
+        Core method handling model serialization, validation, retry logic,
+        status verification, and Allure reporting.
+
+        :param method: HTTP method (GET, POST, PUT, PATCH, DELETE)
+        :param url: Endpoint URL (relative to base_url)
+        :param request_model: Pydantic model instance for request body serialization
+        :param response_model: Pydantic model class for response validation
+        :param expected_status: Expected HTTP status code (raises on mismatch)
+        :param headers: Additional headers for this request
+        :param retry: Retry decorator (e.g., tenacity.retry) for this specific request
+        :param kwargs: Additional arguments passed to httpx.Client.request()
+        :return: Validated Pydantic model instance or raw httpx.Response object.
         """
 
         if request_model is not None:
@@ -102,17 +115,20 @@ class HttpClient(BaseHttpClient):
         if headers:
             kwargs.setdefault("headers", {}).update(headers)
 
-        response = super().request(method, url, **kwargs)
+        # Execute request with optional retry
+        def do_request():
+            return self._request(method, url, **kwargs)
+
+        response = retry(do_request)() if retry else do_request()
 
         # Attach cURL command and response
         self._attach_curl_command(response)
         self._attach_response(method, url, response)
 
         # status check
-        if expected_status is not None and response.status_code != expected_status:
-            raise UnexpectedStatusError(
-                f"Expected {expected_status}, got {response.status_code}. "
-                f"Response: {response.text}"
+        if expected_status is not None:
+            assert response.status_code == expected_status, (
+                f"Expected {expected_status}, got {response.status_code}. Response: {response.text}"
             )
 
         # no response model → return raw response
@@ -133,14 +149,26 @@ class HttpClient(BaseHttpClient):
         response_model: type[RespModel] | None = None,
         expected_status: int | None = None,
         headers: dict[str, str] | None = None,
+        retry: Callable | None = None,
         **kwargs: Any,
-    ):
+    ) -> RespModel | httpx.Response:
+        """
+        Perform a GET request.
+        :param url: Endpoint URL (relative to base_url)
+        :param response_model: Pydantic model class for response validation
+        :param expected_status: Expected HTTP status code
+        :param headers: Additional headers for this request
+        :param retry: Retry decorator for this request
+        :param kwargs: Additional arguments passed to httpx
+        :return: Validated Pydantic model or raw httpx.Response
+        """
         return self.send(
             "GET",
             url,
             response_model=response_model,
             expected_status=expected_status,
             headers=headers,
+            retry=retry,
             **kwargs,
         )
 
@@ -151,8 +179,20 @@ class HttpClient(BaseHttpClient):
         response_model: type[RespModel] | None = None,
         expected_status: int | None = None,
         headers: dict[str, str] | None = None,
+        retry: Callable | None = None,
         **kwargs: Any,
-    ):
+    ) -> RespModel | httpx.Response:
+        """
+        Perform a POST request.
+        :param url: Endpoint URL (relative to base_url)
+        :param request_model: Pydantic model instance for request body
+        :param response_model: Pydantic model class for response validation
+        :param expected_status: Expected HTTP status code
+        :param headers: Additional headers for this request
+        :param retry: Retry decorator for this request
+        :param kwargs: Additional arguments passed to httpx
+        :return: Validated Pydantic model or raw httpx.Response
+        """
         return self.send(
             "POST",
             url,
@@ -160,6 +200,7 @@ class HttpClient(BaseHttpClient):
             response_model=response_model,
             expected_status=expected_status,
             headers=headers,
+            retry=retry,
             **kwargs,
         )
 
@@ -170,8 +211,20 @@ class HttpClient(BaseHttpClient):
         response_model: type[RespModel] | None = None,
         expected_status: int | None = None,
         headers: dict[str, str] | None = None,
+        retry: Callable | None = None,
         **kwargs: Any,
-    ):
+    ) -> RespModel | httpx.Response:
+        """
+        Perform a PUT request.
+        :param url: Endpoint URL (relative to base_url)
+        :param request_model: Pydantic model instance for request body
+        :param response_model: Pydantic model class for response validation
+        :param expected_status: Expected HTTP status code
+        :param headers: Additional headers for this request
+        :param retry: Retry decorator for this request
+        :param kwargs: Additional arguments passed to httpx
+        :return: Validated Pydantic model or raw httpx.Response
+        """
         return self.send(
             "PUT",
             url,
@@ -179,6 +232,7 @@ class HttpClient(BaseHttpClient):
             response_model=response_model,
             expected_status=expected_status,
             headers=headers,
+            retry=retry,
             **kwargs,
         )
 
@@ -189,8 +243,20 @@ class HttpClient(BaseHttpClient):
         response_model: type[RespModel] | None = None,
         expected_status: int | None = None,
         headers: dict[str, str] | None = None,
+        retry: Callable | None = None,
         **kwargs: Any,
-    ):
+    ) -> RespModel | httpx.Response:
+        """
+        Perform a PATCH request.
+        :param url: Endpoint URL (relative to base_url)
+        :param request_model: Pydantic model instance for request body
+        :param response_model: Pydantic model class for response validation
+        :param expected_status: Expected HTTP status code
+        :param headers: Additional headers for this request
+        :param retry: Retry decorator for this request
+        :param kwargs: Additional arguments passed to httpx
+        :return: Validated Pydantic model or raw httpx.Response
+        """
         return self.send(
             "PATCH",
             url,
@@ -198,6 +264,7 @@ class HttpClient(BaseHttpClient):
             response_model=response_model,
             expected_status=expected_status,
             headers=headers,
+            retry=retry,
             **kwargs,
         )
 
@@ -207,13 +274,25 @@ class HttpClient(BaseHttpClient):
         response_model: type[RespModel] | None = None,
         expected_status: int | None = None,
         headers: dict[str, str] | None = None,
+        retry: Callable | None = None,
         **kwargs: Any,
-    ):
+    ) -> RespModel | httpx.Response:
+        """
+        Perform a DELETE request.
+        :param url: Endpoint URL (relative to base_url)
+        :param response_model: Pydantic model class for response validation
+        :param expected_status: Expected HTTP status code
+        :param headers: Additional headers for this request
+        :param retry: Retry decorator for this request
+        :param kwargs: Additional arguments passed to httpx
+        :return: Validated Pydantic model or raw httpx.Response
+        """
         return self.send(
             "DELETE",
             url,
             response_model=response_model,
             expected_status=expected_status,
             headers=headers,
+            retry=retry,
             **kwargs,
         )
