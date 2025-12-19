@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import httpx
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 class BaseHttpClient:
@@ -21,22 +21,34 @@ class BaseHttpClient:
         self,
         base_url: str,
         timeout: float = 10.0,
-        verify: bool = True,
-        auth_token: str | None = None,
+        verify: bool = False,
+        auth: Optional[httpx.Auth] = None,
         default_headers: Dict[str, str] | None = None,
+        **client_kwargs: Any,
     ):
+        """
+        Initialize low-level HTTP client.
+
+        :param base_url: Base URL for all requests (e.g., "https://api.example.com/v1")
+        :param timeout: Request timeout in seconds (default: 10.0)
+        :param verify: SSL certificate verification (default: True)
+        :param auth: Authentication object (BasicAuth, BearerToken, etc.)
+        :param default_headers: Default headers for all requests
+        :param client_kwargs: Additional parameters passed to httpx.Client().
+                             See httpx documentation for all available options:
+                             https://www.python-httpx.org/api/#client
+        """
         self.base_url = base_url.rstrip("/")
 
         headers = default_headers.copy() if default_headers else {}
-
-        if auth_token:
-            headers["Authorization"] = f"Bearer {auth_token}"
 
         self.client = httpx.Client(
             base_url=self.base_url,
             timeout=timeout,
             verify=verify,
+            auth=auth,
             headers=headers,
+            **client_kwargs,
         )
 
     def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:

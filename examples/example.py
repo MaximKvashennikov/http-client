@@ -2,29 +2,32 @@
 Пример использования HttpClient с публичным Petstore API.
 """
 
+import httpx
 from tenacity import retry, stop_after_attempt, wait_fixed
 from core import HttpClient
 from examples.petstore_models import Pet
 
-# конфигурация retry (опционально)
-retry_decorator = retry(stop=stop_after_attempt(3), wait=wait_fixed(2), reraise=True)
 
-# создаём клиент — public petstore swagger (v2)
-client = HttpClient(
-    base_url="https://petstore.swagger.io/v2",
-    auth_token=None,  # у public API токен не нужен
-    default_headers={"User-Agent": "qa-http-client/1.0"},
-)
+def test_petstore():
+    # конфигурация retry (опционально)
+    retry_decorator = retry(
+        stop=stop_after_attempt(3), wait=wait_fixed(2), reraise=True
+    )
 
-pet_req = Pet(
-    id=123456789,
-    name="test-pet",
-    photo_urls=["https://example.com/pet.jpg"],
-    status="available",
-)
+    # создаём клиент — public petstore swagger (v2)
+    client = HttpClient(
+        base_url="https://petstore.swagger.io/v2",
+        default_headers={"User-Agent": "qa-http-client/1.0"},
+        auth=httpx.BasicAuth(username="username", password="secret"),
+    )
 
+    pet_req = Pet(
+        id=123456789,
+        name="test-pet",
+        photo_urls=["https://example.com/pet.jpg"],
+        status="available",
+    )
 
-def main():
     # POST /pet -> возвращает объект Pet и статус 200
     created = client.post(
         "/pet",
@@ -45,9 +48,23 @@ def main():
     client.close()
 
 
-def test_httpx():
-    main()
+def test_basic_auth():
+    # Test with Basic Auth
+    client = HttpClient(
+        base_url="https://httpbin.org",
+        auth=httpx.BasicAuth("user", "pass"),  # правильные креденшелы
+    )
 
+    client.get("/basic-auth/user/pass", expected_status=200)
+    print("Basic Auth works!")
 
-if __name__ == "__main__":
-    main()
+    # Test with wrong credentials
+    client_wrong = HttpClient(
+        base_url="https://httpbin.org",
+        auth=httpx.BasicAuth("wrong", "wrong"),  # неправильные
+    )
+
+    try:
+        client_wrong.get("/basic-auth/user/pass")
+    except Exception as e:
+        print(f"Auth failed as expected: {e}")

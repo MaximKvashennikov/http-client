@@ -19,6 +19,14 @@ class HttpClient(BaseHttpClient):
         - optional response_model validation
         - expected status code verification
         - convenience HTTP methods (get, post, put, patch, delete)
+
+    Parameters (inherited from BaseHttpClient):
+        - base_url: str - Base URL for requests
+        - timeout: float = 10.0 - Request timeout
+        - verify: bool = False - SSL verification
+        - auth: Optional[httpx.Auth] = None - Authentication
+        - default_headers: Optional[Dict[str, str]] = None - Default headers
+        - **client_kwargs: Any - Additional httpx.Client parameters
     """
 
     @staticmethod
