@@ -88,9 +88,7 @@ def test_bearer_auth_positive():
 
     try:
         response = valid_client.get(
-            "/bearer",
-            expected_status=200,
-            headers={"Accept": "application/json"}
+            "/bearer", expected_status=200, headers={"Accept": "application/json"}
         )
 
         result = response.json()
@@ -100,12 +98,13 @@ def test_bearer_auth_positive():
 
         # Assertions
         assert response.status_code == 200
-        assert result['token'] == "valid-token-123"
-        assert result['authenticated'] is True
+        assert result["token"] == "valid-token-123"
+        assert result["authenticated"] is True
 
     except Exception as e:
         print(f"   ❌ Failed: {e}")
         raise
+
 
 def test_bearer_auth_negative():
     print("NEGATIVE TEST: Empty Bearer token")
@@ -117,7 +116,7 @@ def test_bearer_auth_negative():
     )
 
     try:
-        response = empty_auth_client.get("/bearer",expected_status=401)
+        response = empty_auth_client.get("/bearer", expected_status=401)
 
         # If we get here with 200, it's unexpected
         result = response.json()
