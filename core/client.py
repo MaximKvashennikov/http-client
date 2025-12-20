@@ -64,10 +64,15 @@ class HttpClient(BaseHttpClient):
     def _attach_response(method: str, url: str, response: httpx.Response) -> None:
         """Attach response information to Allure report."""
 
+        try:
+            body = response.json()
+        except json.JSONDecodeError:
+            body = response.text
+
         response_info = {
             "status_code": response.status_code,
             "headers": dict(response.headers),
-            "body": response.json() if response.text else None,
+            "body": body if body else None,
         }
 
         allure.attach(
@@ -110,6 +115,7 @@ class HttpClient(BaseHttpClient):
         :param kwargs: Additional arguments passed to httpx.Client.request()
         :return: Validated Pydantic model instance or raw httpx.Response object.
         """
+        response = None
 
         if request_model is not None:
             if "json" in kwargs:
@@ -127,11 +133,16 @@ class HttpClient(BaseHttpClient):
         def do_request():
             return self._request(method, url, **kwargs)
 
-        response = retry(do_request)() if retry else do_request()
-
-        # Attach cURL command and response
-        self._attach_curl_command(response)
-        self._attach_response(method, url, response)
+        try:
+            response = retry(do_request)() if retry else do_request()
+        except httpx.HTTPStatusError as e:
+            response = e.response
+            raise
+        finally:
+            if response is not None:
+                # Attach cURL command and response
+                self._attach_curl_command(response)
+                self._attach_response(method, url, response)
 
         # status check
         if expected_status is not None:
