@@ -5,7 +5,11 @@
 import httpx
 from tenacity import retry, stop_after_attempt, wait_fixed
 from core import HttpClient
+from core.loggers.logger_httpx import HttpxLoggerConfigurator
 from tests.petstore_models import Pet
+
+
+HttpxLoggerConfigurator().configure()
 
 
 class SimpleBearerAuth(httpx.Auth):
