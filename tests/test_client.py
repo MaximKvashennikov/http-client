@@ -5,7 +5,7 @@
 import httpx
 from tenacity import retry, stop_after_attempt, wait_fixed
 from core import HttpClient
-from examples.petstore_models import Pet
+from tests.petstore_models import Pet
 
 
 class SimpleBearerAuth(httpx.Auth):

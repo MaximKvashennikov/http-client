@@ -68,15 +68,22 @@ result = client.post("/items", request_model=item)
 ```python
 from tenacity import retry, stop_after_attempt, wait_fixed
 
-retry_decorator = retry(
+# Create retry strategy
+retry_strategy = retry(
     stop=stop_after_attempt(3),
     wait=wait_fixed(1)
 )
 
-client = HttpClient(
-    base_url="https://api.example.com",
-    retry_decorator=retry_decorator
+# Use per-request retry
+response = client.get(
+    "/users/1",
+    response_model=User,
+    retry=retry_strategy  # 🔄 Apply only to this request
 )
+
+# Or different retry for another request
+aggressive_retry = retry(stop=stop_after_attempt(5), wait=wait_fixed(0.5))
+client.post("/data", request_model=data, retry=aggressive_retry)
 ```
 
 ## 🎯 API
@@ -89,8 +96,60 @@ client = HttpClient(
 | `PATCH` | `client.patch("/users/1", request_model=partial)` |
 | `DELETE` | `client.delete("/users/1", expected_status=204)` |
 
+
+## 🔧 Authentication
+
+### Basic Auth
+``` python
+import httpx
+
+client = HttpClient(
+    base_url="https://httpbin.org",
+    auth=httpx.BasicAuth("user", "pass")  # 🔐 Basic authentication
+)
+
+# All requests will include Basic auth headers
+response = client.get("/basic-auth/user/pass")
+``` 
+
+### Bearer Token Auth
+``` python
+client = HttpClient(
+    base_url="https://api.example.com",
+    auth_token="eyJhbGciOiJIUzI1NiIs..."  # 🔐 Auto adds "Bearer" prefix
+)
+
+# Or via auth parameter
+client = HttpClient(
+    base_url="https://api.example.com",
+    auth=httpx.BearerToken("your-token-here")
+)
+```
+### Custom Auth
+
+``` python
+# Custom auth class
+class CustomAuth(httpx.Auth):
+    def auth_flow(self, request):
+        request.headers["X-API-Key"] = "your-api-key"
+        yield request
+
+client = HttpClient(
+    base_url="https://api.example.com",
+    auth=CustomAuth()  # 🛠️ Custom authentication
+)
+```
+
+### Per-Request Auth
+``` python
+# Override auth for specific request
+response = client.get(
+    "/admin/data",
+    auth=httpx.BasicAuth("admin", "admin123")  # 🎯 Different auth for this request
+)
+```
 ## 🔗 Allure result
-![img.png](examples/allure_example.png)
+![img.png](allure_example.png)
 ## 🔧 Custom Models
 
 ```python
