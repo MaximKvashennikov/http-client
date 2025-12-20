@@ -116,12 +116,6 @@ response = client.get("/basic-auth/user/pass")
 ``` python
 client = HttpClient(
     base_url="https://api.example.com",
-    auth_token="eyJhbGciOiJIUzI1NiIs..."  # 🔐 Auto adds "Bearer" prefix
-)
-
-# Or via auth parameter
-client = HttpClient(
-    base_url="https://api.example.com",
     auth=httpx.BearerToken("your-token-here")
 )
 ```
