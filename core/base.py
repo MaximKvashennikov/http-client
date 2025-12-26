@@ -31,7 +31,7 @@ class BaseHttpClient:
 
         :param base_url: Base URL for all requests (e.g., "https://api.example.com/v1")
         :param timeout: Request timeout in seconds (default: 10.0)
-        :param verify: SSL certificate verification (default: True)
+        :param verify: SSL certificate verification (default: False)
         :param auth: Authentication object (BasicAuth, BearerToken, etc.)
         :param default_headers: Default headers for all requests
         :param client_kwargs: Additional parameters passed to httpx.Client().

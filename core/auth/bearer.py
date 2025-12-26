@@ -39,6 +39,7 @@ class BearerTokenAuth(httpx.Auth):
             self.token_url,
             data=data,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
+            verify=False,
         )
         response.raise_for_status()
 
