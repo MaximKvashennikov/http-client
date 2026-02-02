@@ -1,192 +1,170 @@
 from __future__ import annotations
 
-import json
 import httpx
-import allure
-from curlify2 import Curlify
 from typing import Any, Callable
-from pydantic import ValidationError
-from .base import BaseHttpClient
-from .types import ReqModel, RespModel
+from core.event_hooks.abstract_hook_handler import AbstractHookHandler
+from core.event_hooks.curl_handler import CurlHandler
+from core.event_hooks.allure_handler import AllureHandler
+from core.event_hooks.logging_handler import LoggingHandler
 
 
-class HttpClient(BaseHttpClient):
+class HttpClient:
+    """HTTP клиент для выполнения синхронных запросов.
+
+    Класс предоставляет простой интерфейс для работы с HTTP API с поддержкой
+    retry логики через декораторы и автоматическим управлением соединением.
+
+    Основные возможности:
+        - Автоматическое создание и закрытие соединения
+        - Поддержка всех HTTP методов (GET, POST, PUT, PATCH, DELETE)
+        - Передача параметров запроса (params, json, headers)
+        - Интеграция с retry декораторами (tenacity)
+        - Контекстный менеджер для безопасной работы
+
+    Атрибуты:
+        base_url: Базовый URL для всех запросов
+        timeout: Таймаут запроса по умолчанию в секундах
+        verify: Флаг проверки SSL сертификатов
+        auth: Объект аутентификации httpx
+        default_headers: Заголовки по умолчанию для всех запросов
+        client_kwargs: Дополнительные параметры для httpx.Client
+
+    Примеры:
+        >>> with HttpClient(base_url="https://api.example.com") as client:
+        ...     response = client.get("/users/1")
+        ...     print(response.json())
     """
-    High-level synchronous HTTP client.
 
-    Adds:
-        - optional request_model serialization (Pydantic v2)
-        - optional response_model validation
-        - expected status code verification
-        - convenience HTTP methods (get, post, put, patch, delete)
+    def __init__(
+        self,
+        base_url: str,
+        timeout: float = 10.0,
+        verify: bool = False,
+        auth: httpx.Auth | None = None,
+        default_headers: dict[str, str] | None = None,
+        handlers: list[AbstractHookHandler] | None = None,
+        **client_kwargs: Any,
+    ) -> None:
+        """Инициализирует HTTP клиент.
 
-    Parameters (inherited from BaseHttpClient):
-        - base_url: str - Base URL for requests
-        - timeout: float = 10.0 - Request timeout
-        - verify: bool = False - SSL verification
-        - auth: Optional[httpx.Auth] = None - Authentication
-        - default_headers: Optional[Dict[str, str]] = None - Default headers
-        - **client_kwargs: Any - Additional httpx.Client parameters
-    """
+        Args:
+            base_url: Базовый URL для всех запросов
+                Пример: "https://api.example.com/v1"
+            timeout: Таймаут запроса по умолчанию в секундах
+            verify: Флаг проверки SSL сертификатов
+            auth: Объект аутентификации httpx (BasicAuth, BearerToken и т.д.)
+            default_headers: Заголовки по умолчанию для всех запросов
+            handlers: Обработчики запросов/ответов, см. AbstractHookHandler
+            **client_kwargs: Дополнительные параметры для httpx.Client
+                См. документацию httpx: https://www.python-httpx.org/api/#client
 
-    @staticmethod
-    def _attach_request(method: str, url: str, request_data: Any = None) -> None:
-        """Attach request information to Allure report."""
+        """
 
-        if request_data is not None:
-            allure.attach(
-                body=json.dumps(request_data, indent=2, ensure_ascii=False),
-                name=f"Request: {method} {url}",
-                attachment_type=allure.attachment_type.JSON,
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self.verify = verify
+        self.auth = auth
+        self.default_headers = default_headers.copy() if default_headers else {}
+        self.client_kwargs = client_kwargs
+        self._client: httpx.Client | None = None
+
+        self._handlers: list[AbstractHookHandler] = handlers or [
+            AllureHandler(),
+            CurlHandler(),
+            LoggingHandler(),
+        ]
+
+    def __enter__(self) -> HttpClient:
+        self._setup_client()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
+
+    def __del__(self):
+        self.close()
+
+    def _update_client_hooks(self) -> None:
+        """Обновляет event_hooks существующего клиента."""
+        if self._client:
+            request_hooks = [hook.request_hook for hook in self._handlers]
+            response_hooks = [hook.response_hook for hook in self._handlers]
+
+            self._client.event_hooks["request"] = request_hooks
+            self._client.event_hooks["response"] = response_hooks
+
+    def add_handler(self, handler: AbstractHookHandler) -> HttpClient:
+        """Добавляет обработчик, обновляет хуки клиента"""
+        self._handlers.append(handler)
+
+        if self._client:
+            self._update_client_hooks()
+
+        return self
+
+    def _setup_client(self) -> httpx.Client:
+        """Создает клиент httpx если он еще не создан."""
+        if self._client is None:
+            self._client = httpx.Client(
+                base_url=self.base_url,
+                timeout=self.timeout,
+                verify=self.verify,
+                auth=self.auth,
+                headers=self.default_headers,
+                **self.client_kwargs,
             )
+            self._update_client_hooks()
 
-    @staticmethod
-    def _attach_curl_command(response: httpx.Response) -> None:
-        """Attach cURL command to Allure report."""
+        return self._client
 
-        try:
-            curl_command = (
-                Curlify(response.request).to_curl().replace("-d 'b'''", "-d 'None'")
-            )
-            allure.attach(
-                body=curl_command,
-                name="cURL Command",
-                attachment_type=allure.attachment_type.TEXT,
-            )
-        except Exception as e:
-            allure.attach(
-                body=f"Failed to generate cURL: {str(e)}",
-                name="cURL Error",
-                attachment_type=allure.attachment_type.TEXT,
-            )
+    def close(self) -> None:
+        """Закрытие клиента httpx."""
+        if self._client:
+            self._client.close()
+            self._client = None
 
-    @staticmethod
-    def _attach_response(method: str, url: str, response: httpx.Response) -> None:
-        """Attach response information to Allure report."""
-
-        try:
-            body = response.json()
-        except json.JSONDecodeError:
-            body = response.text
-
-        response_info = {
-            "status_code": response.status_code,
-            "headers": dict(response.headers),
-            "body": body if body else None,
-        }
-
-        allure.attach(
-            body=json.dumps(response_info, indent=2, ensure_ascii=False),
-            name=f"Response: {method} {url}",
-            attachment_type=allure.attachment_type.JSON,
-        )
-
-        allure.attach(
-            body=f"Status: {response.status_code}\n\n{response.text}",
-            name=f"Response Raw: {method} {url}",
-            attachment_type=allure.attachment_type.TEXT,
-        )
-
-    @allure.step("{method} {url}")
-    def send(
+    def _send(
         self,
         method: str,
         url: str,
-        request_model: ReqModel | None = None,
-        response_model: type[RespModel] | None = None,
-        expected_status: int | None = None,
         headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
         retry: Callable | None = None,
         **kwargs: Any,
-    ) -> RespModel | httpx.Response:
-        """
-        Unified high-level HTTP request handler with full feature set.
+    ) -> httpx.Response:
+        """Приватный метод для выполнения HTTP запроса c retry."""
 
-        Core method handling model serialization, validation, retry logic,
-        status verification, and Allure reporting.
+        client = self._setup_client()
 
-        :param method: HTTP method (GET, POST, PUT, PATCH, DELETE)
-        :param url: Endpoint URL (relative to base_url)
-        :param request_model: Pydantic model instance for request body serialization
-        :param response_model: Pydantic model class for response validation
-        :param expected_status: Expected HTTP status code (raises on mismatch)
-        :param headers: Additional headers for this request
-        :param retry: Retry decorator (e.g., tenacity.retry) for this specific request
-        :param kwargs: Additional arguments passed to httpx.Client.request()
-        :return: Validated Pydantic model instance or raw httpx.Response object.
-        """
-        response = None
-
-        if request_model is not None:
-            if "json" in kwargs:
-                raise ValueError("Pass either request_model or json, not both.")
-            json_data = request_model.model_dump(by_alias=True)
-            kwargs["json"] = json_data
-
-            # Attach request
-            self._attach_request(method, url, request_data=json_data)
-
-        if headers:
-            kwargs.setdefault("headers", {}).update(headers)
-
-        # Execute request with optional retry
-        def do_request():
-            return self._request(method, url, **kwargs)
-
-        try:
-            response = retry(do_request)() if retry else do_request()
-        except httpx.HTTPStatusError as e:
-            response = e.response
-            raise
-        finally:
-            if response is not None:
-                # Attach cURL command and response
-                self._attach_curl_command(response)
-                self._attach_response(method, url, response)
-
-        # status check
-        if expected_status is not None:
-            assert response.status_code == expected_status, (
-                f"Expected {expected_status}, got {response.status_code}. Response: {response.text}"
+        def do_request() -> httpx.Response:
+            return client.request(
+                method=method,
+                url=url,
+                headers=headers,
+                params=params,
+                json=json,
+                **kwargs,
             )
 
-        # no response model → return raw response
-        if not response_model:
-            return response
-
-        # validate response
-        try:
-            return response_model.model_validate(response.json())
-        except (ValueError, ValidationError) as e:
-            raise ValidationError(
-                f"Failed to validate response as {response_model.__name__}: {e}"
-            ) from e
+        return retry(do_request)() if retry else do_request()
 
     def get(
         self,
         url: str,
-        response_model: type[RespModel] | None = None,
-        expected_status: int | None = None,
-        headers: dict[str, str] | None = None,
+        headers: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
         retry: Callable | None = None,
         **kwargs: Any,
-    ) -> RespModel | httpx.Response:
-        """
-        Perform a GET request.
-        :param url: Endpoint URL (relative to base_url)
-        :param response_model: Pydantic model class for response validation
-        :param expected_status: Expected HTTP status code
-        :param headers: Additional headers for this request
-        :param retry: Retry decorator for this request
-        :param kwargs: Additional arguments passed to httpx
-        :return: Validated Pydantic model or raw httpx.Response
-        """
-        return self.send(
-            "GET",
-            url,
-            response_model=response_model,
-            expected_status=expected_status,
+    ) -> httpx.Response:
+        """Выполнить GET запрос."""
+        return self._send(
+            method="GET",
+            url=url,
             headers=headers,
+            params=params,
+            json=json,
             retry=retry,
             **kwargs,
         )
@@ -194,31 +172,19 @@ class HttpClient(BaseHttpClient):
     def post(
         self,
         url: str,
-        request_model: ReqModel | None = None,
-        response_model: type[RespModel] | None = None,
-        expected_status: int | None = None,
-        headers: dict[str, str] | None = None,
+        headers: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
         retry: Callable | None = None,
         **kwargs: Any,
-    ) -> RespModel | httpx.Response:
-        """
-        Perform a POST request.
-        :param url: Endpoint URL (relative to base_url)
-        :param request_model: Pydantic model instance for request body
-        :param response_model: Pydantic model class for response validation
-        :param expected_status: Expected HTTP status code
-        :param headers: Additional headers for this request
-        :param retry: Retry decorator for this request
-        :param kwargs: Additional arguments passed to httpx
-        :return: Validated Pydantic model or raw httpx.Response
-        """
-        return self.send(
-            "POST",
-            url,
-            request_model=request_model,
-            response_model=response_model,
-            expected_status=expected_status,
+    ) -> httpx.Response:
+        """Выполнить POST запрос."""
+        return self._send(
+            method="POST",
+            url=url,
             headers=headers,
+            params=params,
+            json=json,
             retry=retry,
             **kwargs,
         )
@@ -226,31 +192,19 @@ class HttpClient(BaseHttpClient):
     def put(
         self,
         url: str,
-        request_model: ReqModel | None = None,
-        response_model: type[RespModel] | None = None,
-        expected_status: int | None = None,
-        headers: dict[str, str] | None = None,
+        headers: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
         retry: Callable | None = None,
         **kwargs: Any,
-    ) -> RespModel | httpx.Response:
-        """
-        Perform a PUT request.
-        :param url: Endpoint URL (relative to base_url)
-        :param request_model: Pydantic model instance for request body
-        :param response_model: Pydantic model class for response validation
-        :param expected_status: Expected HTTP status code
-        :param headers: Additional headers for this request
-        :param retry: Retry decorator for this request
-        :param kwargs: Additional arguments passed to httpx
-        :return: Validated Pydantic model or raw httpx.Response
-        """
-        return self.send(
-            "PUT",
-            url,
-            request_model=request_model,
-            response_model=response_model,
-            expected_status=expected_status,
+    ) -> httpx.Response:
+        """Выполнить PUT запрос."""
+        return self._send(
+            method="PUT",
+            url=url,
             headers=headers,
+            params=params,
+            json=json,
             retry=retry,
             **kwargs,
         )
@@ -258,31 +212,19 @@ class HttpClient(BaseHttpClient):
     def patch(
         self,
         url: str,
-        request_model: ReqModel | None = None,
-        response_model: type[RespModel] | None = None,
-        expected_status: int | None = None,
-        headers: dict[str, str] | None = None,
+        headers: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
         retry: Callable | None = None,
         **kwargs: Any,
-    ) -> RespModel | httpx.Response:
-        """
-        Perform a PATCH request.
-        :param url: Endpoint URL (relative to base_url)
-        :param request_model: Pydantic model instance for request body
-        :param response_model: Pydantic model class for response validation
-        :param expected_status: Expected HTTP status code
-        :param headers: Additional headers for this request
-        :param retry: Retry decorator for this request
-        :param kwargs: Additional arguments passed to httpx
-        :return: Validated Pydantic model or raw httpx.Response
-        """
-        return self.send(
-            "PATCH",
-            url,
-            request_model=request_model,
-            response_model=response_model,
-            expected_status=expected_status,
+    ) -> httpx.Response:
+        """Выполнить PATCH запрос."""
+        return self._send(
+            method="PATCH",
+            url=url,
             headers=headers,
+            params=params,
+            json=json,
             retry=retry,
             **kwargs,
         )
@@ -290,28 +232,19 @@ class HttpClient(BaseHttpClient):
     def delete(
         self,
         url: str,
-        response_model: type[RespModel] | None = None,
-        expected_status: int | None = None,
-        headers: dict[str, str] | None = None,
+        headers: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
         retry: Callable | None = None,
         **kwargs: Any,
-    ) -> RespModel | httpx.Response:
-        """
-        Perform a DELETE request.
-        :param url: Endpoint URL (relative to base_url)
-        :param response_model: Pydantic model class for response validation
-        :param expected_status: Expected HTTP status code
-        :param headers: Additional headers for this request
-        :param retry: Retry decorator for this request
-        :param kwargs: Additional arguments passed to httpx
-        :return: Validated Pydantic model or raw httpx.Response
-        """
-        return self.send(
-            "DELETE",
-            url,
-            response_model=response_model,
-            expected_status=expected_status,
+    ) -> httpx.Response:
+        """Выполнить DELETE запрос."""
+        return self._send(
+            method="DELETE",
+            url=url,
             headers=headers,
+            params=params,
+            json=json,
             retry=retry,
             **kwargs,
         )

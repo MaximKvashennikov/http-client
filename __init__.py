@@ -1,6 +1,4 @@
-from .core.client import HttpClient
-from .core.auth.bearer import BearerTokenAuth
-from core.loggers.logger_httpx import HttpxLoggerConfigurator
+from core import HttpClient
+from core.auth.bearer import BearerTokenAuth
 
-
-__all__ = ["HttpClient", "BearerTokenAuth", "HttpxLoggerConfigurator"]
+__all__ = ["HttpClient", "BearerTokenAuth"]

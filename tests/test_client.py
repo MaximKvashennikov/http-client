@@ -1,143 +1,82 @@
-"""
-Пример использования HttpClient с публичным Petstore API.
-"""
-
-import httpx
-from tenacity import retry, stop_after_attempt, wait_fixed
-from core import HttpClient
-from core.loggers.logger_httpx import HttpxLoggerConfigurator
-from tests.petstore_models import Pet
+import allure
+import pytest
+from tenacity import retry, stop_after_attempt, wait_fixed, RetryError
+from core.client import HttpClient
+from core.event_hooks.curl_handler import CurlHandler
 
 
-HttpxLoggerConfigurator().configure()
+class TestHttpClient:
+    BASE_URL = "https://jsonplaceholder.typicode.com"
 
+    def test_with_context_manager(self):
+        """Позитивный: с контекстным менеджером."""
+        with HttpClient(base_url=self.BASE_URL) as client:
+            response = client.get("/posts/1")
+            assert response.status_code == 200
+            data = response.json()
+            assert "id" in data
+            assert data["id"] == 1
 
-class SimpleBearerAuth(httpx.Auth):
-    """Simple Bearer token authentication for testing."""
+    def test_without_context_manager(self):
+        """Позитивный: без контекстного менеджера."""
+        client = HttpClient(base_url=self.BASE_URL)
 
-    def __init__(self, token: str):
-        self.token = token
+        try:
+            response = client.get("/posts/2")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["id"] == 2
+        finally:
+            client.close()
 
-    def auth_flow(self, request):
-        if self.token:
-            request.headers["Authorization"] = f"Bearer {self.token}"
-        yield request
+    def test_non_200_response(self):
+        """Негативный: код ответа не 200."""
+        with HttpClient(base_url=self.BASE_URL) as client:
+            response = client.get("/posts/99999")
+            # jsonplaceholder возвращает пустой объект для несуществующих постов
+            assert response.status_code == 404
+            data = response.json()
+            # Но данные будут пустыми
+            assert data == {}
 
+    def test_with_tenacity_retry(self):
+        """Тест с retry тенасити при 404."""
+        from tenacity import retry_if_result
 
-def test_petstore():
-    retry_decorator = retry(
-        stop=stop_after_attempt(3), wait=wait_fixed(2), reraise=True
-    )
+        def is_404_response(value):
+            print(value)
+            return value.status_code in (404, 500)
 
-    client = HttpClient(
-        base_url="https://petstore.swagger.io/v2",
-        default_headers={"User-Agent": "qa-http-client/1.0"},
-    )
-
-    pet_req = Pet(
-        id=123456789,
-        name="test-pet",
-        photo_urls=["https://example.com/pet.jpg"],
-        status="available",
-    )
-
-    created = client.post(
-        "/pet",
-        request_model=pet_req,
-        # response_model=Pet,
-        expected_status=200,
-        retry=retry_decorator,
-    )
-    print("Created:", created.json())
-
-    fetched = client.get(f"/pet/{pet_req.id}", response_model=Pet, expected_status=200)
-    print("Fetched:", fetched)
-
-    resp = client.delete(f"/pet/{pet_req.id}", expected_status=200)
-    print("Delete raw response status:", resp.status_code)
-
-    client.close()
-
-
-def test_basic_auth():
-    # Test with Basic Auth
-    client = HttpClient(
-        base_url="https://httpbin.org",
-        auth=httpx.BasicAuth("user", "pass"),  # правильные креденшелы
-    )
-
-    client.get("/basic-auth/user/pass", expected_status=200)
-    print("Basic Auth works!")
-
-    # Test with wrong credentials
-    client_wrong = HttpClient(
-        base_url="https://httpbin.org",
-        auth=httpx.BasicAuth("wrong", "wrong"),  # неправильные
-    )
-
-    try:
-        client_wrong.get("/basic-auth/user/pass")
-    except Exception as e:
-        print(f"Auth failed as expected: {e}")
-
-
-def test_bearer_auth_positive():
-    print("POSITIVE TEST: Valid Bearer token")
-
-    valid_client = HttpClient(
-        base_url="https://httpbin.org",
-        auth=SimpleBearerAuth("valid-token-123"),
-        timeout=10.0,
-    )
-
-    try:
-        response = valid_client.get(
-            "/bearer", expected_status=200, headers={"Accept": "application/json"}
+        # Создаем retry декоратор, который ретраит при 404
+        retry_decorator = retry(
+            stop=stop_after_attempt(3),
+            wait=wait_fixed(0.1),
+            retry=retry_if_result(is_404_response),
         )
 
-        result = response.json()
-        print(f"   ✅ Status: {response.status_code}")
-        print(f"   ✅ Token: {result['token']}")
-        print(f"   ✅ Authenticated: {result['authenticated']}")
+        with HttpClient(base_url=self.BASE_URL) as client:
+            # Делаем запрос с retry - он будет ретраить 3 раза при 404
+            with pytest.raises(RetryError) as exc_info:
+                client.get("/posts/999999", retry=retry_decorator)
 
-        # Assertions
-        assert response.status_code == 200
-        assert result["token"] == "valid-token-123"
-        assert result["authenticated"] is True
+            # Можно проверить что исключение действительно RetryError
+            assert "RetryError" in str(exc_info.type)
 
-    except Exception as e:
-        print(f"   ❌ Failed: {e}")
-        raise
+    def test_with_params_and_add_hook(self):
+        """Тест с передачей параметров."""
+        with HttpClient(base_url=self.BASE_URL) as client:
+            # Простой GET с параметрами
+            response = client.get("/posts", params={"userId": 1, "_limit": 5})
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) <= 5  # Проверяем лимит
 
+            # Добавим хук
+            client.add_handler(CurlHandler())
 
-def test_bearer_auth_negative():
-    print("NEGATIVE TEST: Empty Bearer token")
-
-    empty_auth_client = HttpClient(
-        base_url="https://httpbin.org",
-        auth=SimpleBearerAuth(""),  # Empty token
-        timeout=10.0,
-    )
-
-    try:
-        response = empty_auth_client.get("/bearer", expected_status=401)
-
-        # If we get here with 200, it's unexpected
-        result = response.json()
-        print(f"   ❌ UNEXPECTED: Got 200 with empty token")
-        print(f"      Token: '{result['token']}'")
-        print(f"      Authenticated: {result['authenticated']}")
-
-        # This shouldn't happen
-        assert False, "Should have gotten 401 for empty token"
-
-    except httpx.HTTPStatusError as e:
-        assert e.response.status_code == 401
-        print(f"   ✅ Got expected 401 for empty token")
-
-    except Exception as e:
-        print(f"   ❌ Failed: {e}")
-        raise
-
-    finally:
-        empty_auth_client.close()
+            # POST с JSON
+            with allure.step("POST с JSON"):
+                response = client.post(
+                    "/posts", json={"title": "Test", "body": "Content", "userId": 1}
+                )
+                assert response.status_code == 201

@@ -1,9 +1,8 @@
 # 🚀 HTTP Client
 
-**Modern HTTP client for Python with full type safety.** Built on `httpx` + `pydantic`.
+**Modern HTTP client for Python with full type safety.** Built on `httpx`.
 
 ## ✨ Features
-- ✅ **Full type safety** with Pydantic v2
 - 🔄 **Auto retry** with tenacity
 - 🔐 **Bearer auth** included
 - 📦 **Clean API** – simple methods
@@ -12,28 +11,21 @@
 
 ```python
 from http_client import HttpClient
-from http_client.models import Pet
 
-# 1. Create client
-client = HttpClient("https://petstore.swagger.io/v2")
-
-# 2. Create model
-pet = Pet(
-    id=123,
-    name="Fluffy",
-    photo_urls=["photo.jpg"],
-    status="available"
+client = HttpClient(
+    base_url="https://api.example.com",
+    timeout=30.0
 )
 
-# 3. Make request
-created = client.post(
-    "/pet",
-    request_model=pet,      # 📤 Send as JSON
-    response_model=Pet,     # 📥 Validate response
-    expected_status=200     # 🎯 Check status
-)
+# Простой GET запрос
+response = client.get("/users/1")
+user_data = response.json()
 
-print(f"Created: {created.name}")  # ✅ Typed response
+# POST запрос с JSON
+response = client.post(
+    "/items",
+    json={"name": "New Item", "price": 100}
+)
 ```
 
 ## 📦 Installation
@@ -51,51 +43,62 @@ pip install httpx pydantic tenacity allure-pytest curlify2
 ```python
 from http_client import HttpClient
 
-client = HttpClient(
-    base_url="https://api.example.com",
-    auth_token="your-token",
-    timeout=30.0
+# 1. Создаем клиент
+client = HttpClient("https://jsonplaceholder.typicode.com")
+
+# 2. Делаем запросы
+response = client.get("/posts/1")
+data = response.json()
+print(f"Post title: {data['title']}")
+
+# 3. POST запрос с данными
+new_post = client.post(
+    "/posts",
+    json={
+        "title": "foo",
+        "body": "bar",
+        "userId": 1
+    }
 )
+print(f"Created post ID: {new_post.json()['id']}")
 
-# GET with validation
-user = client.get("/users/1", response_model=User)
-
-# POST with data
-result = client.post("/items", request_model=item)
+# 4. Запрос с кастомными заголовками
+response = client.get(
+    "/users/1",
+    headers={
+        "Authorization": "Bearer token123",
+        "X-Custom-Header": "value"
+    }
+)
 ```
 
 ### With Retry Logic
 ```python
 from tenacity import retry, stop_after_attempt, wait_fixed
 
-# Create retry strategy
+# Создаем стратегию retry
 retry_strategy = retry(
     stop=stop_after_attempt(3),
     wait=wait_fixed(1)
 )
 
-# Use per-request retry
+# Используем retry в конкретном запросе
 response = client.get(
-    "/users/1",
-    response_model=User,
-    retry=retry_strategy  # 🔄 Apply only to this request
+    "/unstable-endpoint",
+    retry=retry_strategy  # 🔄 Применяется только к этому запросу
 )
 
-# Or different retry for another request
-aggressive_retry = retry(stop=stop_after_attempt(5), wait=wait_fixed(0.5))
-client.post("/data", request_model=data, retry=aggressive_retry)
+# Другая стратегия для другого запроса
+aggressive_retry = retry(
+    stop=stop_after_attempt(5), 
+    wait=wait_fixed(0.5)
+)
+response = client.post(
+    "/critical-data",
+    json=data,
+    retry=aggressive_retry
+)
 ```
-
-## 🎯 API
-
-| Method | Example |
-|--------|---------|
-| `GET` | `client.get("/users", response_model=List[User])` |
-| `POST` | `client.post("/users", request_model=user)` |
-| `PUT` | `client.put("/users/1", request_model=update)` |
-| `PATCH` | `client.patch("/users/1", request_model=partial)` |
-| `DELETE` | `client.delete("/users/1", expected_status=204)` |
-
 
 ## 🔧 Authentication
 
@@ -142,19 +145,98 @@ response = client.get(
     auth=httpx.BasicAuth("admin", "admin123")  # 🎯 Different auth for this request
 )
 ```
-## 🔗 Allure result
-![img.png](allure_example.png)
-## 🔧 Custom Models
+## 🎭 Event Handlers
+📋 Overview
+Event handlers allow you to intercept HTTP requests and responses for logging, debugging, or attaching data to reports. The client supports multiple handlers that work together.
 
-```python
-from pydantic import BaseModel, Field
+### Create client with logging
+``` python
+client = HttpClient(
+    base_url="https://api.example.com",
+    handlers=[LoggingHandler()]
+)
+```
+All requests will be logged with INFO level
+Errors (status >= 300) include headers and body
+Success responses log basic info only
+### Curl Command Handler
+``` python
+from src.clients.http_client.core.event_hooks.curl_handler import CurlHandler
 
-class User(BaseModel):
-    id: int
-    name: str
-    email: str = Field(alias="userEmail")  # 🔄 Auto convert
-    roles: list[str] = []
+client = HttpClient(
+    base_url="https://api.example.com",
+    handlers=[CurlHandler()]
+)
+```
+Each request will generate equivalent curl command
+Useful for debugging and reproducing requests
+### Allure Report Handler
+``` python
+from src.clients.http_client.core.event_hooks.allure_handler import AllureHandler
+
+client = HttpClient(
+    base_url="https://api.example.com",
+    handlers=[AllureHandler()]
+)
+```
+Automatically attaches request/response data to Allure reports
+Great for test automation and CI/CD pipelines
+### 🎯 Using Multiple Handlers
+``` python
+from src.clients.http_client import HttpClient
+from src.clients.http_client.core.event_hooks import (
+    LoggingHandler,
+    CurlHandler,
+    AllureHandler
+)
+
+client = HttpClient(
+    base_url="https://api.example.com",
+    handlers=[
+        LoggingHandler(),    # 📝 Console logs
+        CurlHandler(),       # 🔗 Curl commands for debugging
+        AllureHandler()      # 📊 Allure report attachments
+    ]
+)
+
+# All handlers will process each request/response
+response = client.get("/data")
+```
+### ➕ Adding Handlers Dynamically
+``` python
+client = HttpClient(base_url="https://api.example.com")
+
+# Add handlers after client creation
+client.add_handler(LoggingHandler())
+client.add_handler(CurlHandler())
+
+# Now requests will use all added handlers
+response = client.post("/submit", json={"data": "test"})
+```
+### ✨ Custom Handlers
+Create your own handler by extending AbstractHookHandler:
+
+``` python
+from src.clients.http_client.core.event_hooks.abstract_hook_handler import AbstractHookHandler
+import httpx
+
+class MetricsHandler(AbstractHookHandler):
+    """Custom handler for collecting request metrics."""
     
-    class Config:
-        populate_by_name = True  # 🎯 Support aliases
+    @staticmethod
+    def request_hook(request: httpx.Request) -> None:
+        # Track request start time
+        request.context["start_time"] = time.time()
+    
+    @staticmethod
+    def response_hook(response: httpx.Response) -> None:
+        # Calculate and log response time
+        elapsed = time.time() - response.request.context["start_time"]
+        print(f"Request took {elapsed:.2f}s")
+
+# Use custom handler
+client = HttpClient(
+    base_url="https://api.example.com",
+    handlers=[MetricsHandler()]
+)
 ```
