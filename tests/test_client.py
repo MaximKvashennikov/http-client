@@ -1,82 +1,88 @@
 import allure
+import httpx
 import pytest
-from tenacity import retry, stop_after_attempt, wait_fixed, RetryError
-from core.client import HttpClient
-from core.event_hooks.curl_handler import CurlHandler
+from tenacity import RetryError, retry, retry_if_result, stop_after_attempt, wait_fixed
+
+from pt_http_client import HttpClient
+from pt_http_client.event_hooks.curl_handler import CurlHandler
 
 
 class TestHttpClient:
+    """Тесты для HttpClient."""
+
     BASE_URL = "https://jsonplaceholder.typicode.com"
 
-    def test_with_context_manager(self):
+    POST_ID_1 = 1
+    POST_ID_2 = 2
+    POST_ID_99999 = 99999
+    POST_ID_999999 = 999999
+    LIMIT_5 = 5
+    USER_ID_1 = 1
+    RETRY_ATTEMPTS = 3
+    RETRY_WAIT = 0.1
+
+    def test_with_context_manager(self) -> None:
         """Позитивный: с контекстным менеджером."""
         with HttpClient(base_url=self.BASE_URL) as client:
-            response = client.get("/posts/1")
-            assert response.status_code == 200
+            response = client.get(f"/posts/{self.POST_ID_1}")
+            assert response.status_code == httpx.codes.OK
             data = response.json()
             assert "id" in data
-            assert data["id"] == 1
+            assert data["id"] == self.POST_ID_1
 
-    def test_without_context_manager(self):
+    def test_without_context_manager(self) -> None:
         """Позитивный: без контекстного менеджера."""
         client = HttpClient(base_url=self.BASE_URL)
 
         try:
-            response = client.get("/posts/2")
-            assert response.status_code == 200
+            response = client.get(f"/posts/{self.POST_ID_2}")
+            assert response.status_code == httpx.codes.OK
             data = response.json()
-            assert data["id"] == 2
+            assert data["id"] == self.POST_ID_2
         finally:
             client.close()
 
-    def test_non_200_response(self):
+    def test_non_200_response(self) -> None:
         """Негативный: код ответа не 200."""
         with HttpClient(base_url=self.BASE_URL) as client:
-            response = client.get("/posts/99999")
-            # jsonplaceholder возвращает пустой объект для несуществующих постов
-            assert response.status_code == 404
+            response = client.get(f"/posts/{self.POST_ID_99999}")
+
+            assert response.status_code == httpx.codes.NOT_FOUND
             data = response.json()
-            # Но данные будут пустыми
+
             assert data == {}
 
-    def test_with_tenacity_retry(self):
+    def test_with_tenacity_retry(self) -> None:
         """Тест с retry тенасити при 404."""
-        from tenacity import retry_if_result
 
-        def is_404_response(value):
+        def is_404_response(value: httpx.Response) -> bool:
             print(value)
-            return value.status_code in (404, 500)
+            # Используем set вместо tuple
+            error_codes = {httpx.codes.NOT_FOUND, httpx.codes.INTERNAL_SERVER_ERROR}
+            return value.status_code in error_codes
 
-        # Создаем retry декоратор, который ретраит при 404
         retry_decorator = retry(
-            stop=stop_after_attempt(3),
-            wait=wait_fixed(0.1),
+            stop=stop_after_attempt(self.RETRY_ATTEMPTS),
+            wait=wait_fixed(self.RETRY_WAIT),
             retry=retry_if_result(is_404_response),
         )
 
         with HttpClient(base_url=self.BASE_URL) as client:
-            # Делаем запрос с retry - он будет ретраить 3 раза при 404
             with pytest.raises(RetryError) as exc_info:
-                client.get("/posts/999999", retry=retry_decorator)
+                client.get(f"/posts/{self.POST_ID_999999}", retry=retry_decorator)
 
-            # Можно проверить что исключение действительно RetryError
             assert "RetryError" in str(exc_info.type)
 
-    def test_with_params_and_add_hook(self):
+    def test_with_params_and_add_hook(self) -> None:
         """Тест с передачей параметров."""
         with HttpClient(base_url=self.BASE_URL) as client:
-            # Простой GET с параметрами
-            response = client.get("/posts", params={"userId": 1, "_limit": 5})
-            assert response.status_code == 200
+            response = client.get("/posts", params={"userId": self.USER_ID_1, "_limit": self.LIMIT_5})
+            assert response.status_code == httpx.codes.OK
             data = response.json()
-            assert len(data) <= 5  # Проверяем лимит
+            assert len(data) <= self.LIMIT_5
 
-            # Добавим хук
             client.add_handler(CurlHandler())
 
-            # POST с JSON
             with allure.step("POST с JSON"):
-                response = client.post(
-                    "/posts", json={"title": "Test", "body": "Content", "userId": 1}
-                )
-                assert response.status_code == 201
+                response = client.post("/posts", json={"title": "Test", "body": "Content", "userId": self.USER_ID_1})
+                assert response.status_code == httpx.codes.CREATED

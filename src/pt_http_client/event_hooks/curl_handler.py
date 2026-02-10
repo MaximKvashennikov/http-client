@@ -1,7 +1,8 @@
 import allure
 import httpx
 from curlify2 import Curlify
-from core.event_hooks.abstract_hook_handler import AbstractHookHandler
+
+from .abstract_hook_handler import AbstractHookHandler
 
 
 class CurlHandler(AbstractHookHandler):
@@ -16,7 +17,7 @@ class CurlHandler(AbstractHookHandler):
         try:
             curl_command = Curlify(request).to_curl()
 
-            # Заменяем некорректные значения в теле запроса, баг библиотеки
+            # Заменяем некорректные значения в теле запроса, bug библиотеки
             curl_command = curl_command.replace("-d 'b'''", "-d 'None'")
 
             allure.attach(
@@ -27,12 +28,11 @@ class CurlHandler(AbstractHookHandler):
 
         except Exception as e:
             allure.attach(
-                body=f"Failed to generate cURL: {str(e)}\n"
-                f"Request: {request.method} {request.url}",
+                body=f"Failed to generate cURL: {e!s}\nRequest: {request.method} {request.url}",
                 name="cURL Generation Error",
                 attachment_type=allure.attachment_type.TEXT,
             )
 
     def response_hook(self, response: httpx.Response) -> None:
-        """Для cURL команд ответ не требуется, метод оставляем пустым"""
+        """Для cURL команд ответ не требуется, метод оставляем пустым."""
         pass

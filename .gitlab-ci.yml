@@ -1,0 +1,32 @@
+default:
+  tags:
+    - docker
+    - linux
+
+stages:
+  - lint
+
+#build:
+#  rules:
+#    - if: $CI_COMMIT_TAG =~ /^[0-9]+\.[0-9]+\.[0-9]+$/
+#      when: manual
+#    - when: never
+
+Lint:
+  stage: lint
+  image: docker.ptsecurity.ru/ci_python:3.12.5-alpine3.20
+  before_script:
+    - set -e
+    - apk --no-cache add curl
+    - pip config --global set global.index-url https://pypi-proxy.ptsecurity.com
+    - pip install uv
+    - uv sync --frozen --all-groups --no-editable
+  script:
+    - echo "Running ruff check..."
+    - uv run ruff check --fix
+    - echo "Running ruff format..."
+    - uv run ruff format
+    - echo "Running mypy check..."
+    - uv run mypy .
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'

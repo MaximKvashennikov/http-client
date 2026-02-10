@@ -1,13 +1,21 @@
 import json
-import httpx
 import logging
-from core.event_hooks.abstract_hook_handler import AbstractHookHandler
+
+import httpx
+
+from .abstract_hook_handler import AbstractHookHandler
 
 
 class LoggingHandler(AbstractHookHandler):
     """Простой обработчик для логирования HTTP запросов."""
 
-    def __init__(self, logger: logging.Logger | None = None):
+    def __init__(self, logger: logging.Logger | None = None) -> None:
+        """Инициализирует обработчик логирования.
+
+        Args:
+            logger: Логгер для записи сообщений. Если не передан,
+                    используется логгер с именем текущего модуля.
+        """
         self.logger = logger or logging.getLogger(__name__)
 
     def request_hook(self, request: httpx.Request) -> None:
@@ -32,7 +40,7 @@ class LoggingHandler(AbstractHookHandler):
             "body": self._truncate_body(body) if body else None,
         }
 
-        if response.status_code >= 400:
+        if response.status_code >= httpx.codes.BAD_REQUEST:
             self.logger.warning(f"Ответ: {response.status_code}")
             self.logger.warning(response_info)
 

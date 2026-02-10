@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import types
+from collections.abc import Callable
+from typing import Any
+
 import httpx
-from typing import Any, Callable
-from core.event_hooks.abstract_hook_handler import AbstractHookHandler
-from core.event_hooks.curl_handler import CurlHandler
-from core.event_hooks.allure_handler import AllureHandler
-from core.event_hooks.logging_handler import LoggingHandler
+
+from .event_hooks.abstract_hook_handler import AbstractHookHandler
+from .event_hooks.allure_handler import AllureHandler
+from .event_hooks.curl_handler import CurlHandler
+from .event_hooks.logging_handler import LoggingHandler
+
+type RetryDecorator = Callable[[Callable[[], httpx.Response]], Callable[[], httpx.Response]]
 
 
 class HttpClient:
@@ -59,7 +65,6 @@ class HttpClient:
                 См. документацию httpx: https://www.python-httpx.org/api/#client
 
         """
-
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.verify = verify
@@ -68,20 +73,18 @@ class HttpClient:
         self.client_kwargs = client_kwargs
         self._client: httpx.Client | None = None
 
-        self._handlers: list[AbstractHookHandler] = handlers or [
-            AllureHandler(),
-            CurlHandler(),
-            LoggingHandler(),
-        ]
+        self._handlers: list[AbstractHookHandler] = handlers or [AllureHandler(), CurlHandler(), LoggingHandler()]
 
     def __enter__(self) -> HttpClient:
         self._setup_client()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: types.TracebackType | None
+    ) -> None:
         self.close()
 
-    def __del__(self):
+    def __del__(self) -> None:
         self.close()
 
     def _update_client_hooks(self) -> None:
@@ -94,7 +97,14 @@ class HttpClient:
             self._client.event_hooks["response"] = response_hooks
 
     def add_handler(self, handler: AbstractHookHandler) -> HttpClient:
-        """Добавляет обработчик, обновляет хуки клиента"""
+        """Добавляет обработчик, обновляет хуки клиента.
+
+        Args:
+            handler: Обработчик событий для добавления.
+
+        Returns:
+            Текущий экземпляр HttpClient (fluent interface).
+        """
         self._handlers.append(handler)
 
         if self._client:
@@ -103,7 +113,11 @@ class HttpClient:
         return self
 
     def _setup_client(self) -> httpx.Client:
-        """Создает клиент httpx если он еще не создан."""
+        """Создает клиент httpx если он еще не создан.
+
+        Returns:
+            Экземпляр httpx.Client, готовый к использованию.
+        """
         if self._client is None:
             self._client = httpx.Client(
                 base_url=self.base_url,
@@ -130,22 +144,18 @@ class HttpClient:
         headers: dict[str, str] | None = None,
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
-        retry: Callable | None = None,
+        retry: RetryDecorator | None = None,
         **kwargs: Any,
     ) -> httpx.Response:
-        """Приватный метод для выполнения HTTP запроса c retry."""
+        """Приватный метод для выполнения HTTP запроса c retry.
 
+        Returns:
+            Ответ от сервера в виде httpx.Response.
+        """
         client = self._setup_client()
 
         def do_request() -> httpx.Response:
-            return client.request(
-                method=method,
-                url=url,
-                headers=headers,
-                params=params,
-                json=json,
-                **kwargs,
-            )
+            return client.request(method=method, url=url, headers=headers, params=params, json=json, **kwargs)
 
         return retry(do_request)() if retry else do_request()
 
@@ -155,19 +165,15 @@ class HttpClient:
         headers: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
-        retry: Callable | None = None,
+        retry: RetryDecorator | None = None,
         **kwargs: Any,
     ) -> httpx.Response:
-        """Выполнить GET запрос."""
-        return self._send(
-            method="GET",
-            url=url,
-            headers=headers,
-            params=params,
-            json=json,
-            retry=retry,
-            **kwargs,
-        )
+        """Выполнить GET запрос.
+
+        Returns:
+            Ответ от сервера в виде httpx.Response.
+        """
+        return self._send(method="GET", url=url, headers=headers, params=params, json=json, retry=retry, **kwargs)
 
     def post(
         self,
@@ -175,19 +181,15 @@ class HttpClient:
         headers: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
-        retry: Callable | None = None,
+        retry: RetryDecorator | None = None,
         **kwargs: Any,
     ) -> httpx.Response:
-        """Выполнить POST запрос."""
-        return self._send(
-            method="POST",
-            url=url,
-            headers=headers,
-            params=params,
-            json=json,
-            retry=retry,
-            **kwargs,
-        )
+        """Выполнить POST запрос.
+
+        Returns:
+            Ответ от сервера в виде httpx.Response.
+        """
+        return self._send(method="POST", url=url, headers=headers, params=params, json=json, retry=retry, **kwargs)
 
     def put(
         self,
@@ -195,19 +197,15 @@ class HttpClient:
         headers: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
-        retry: Callable | None = None,
+        retry: RetryDecorator | None = None,
         **kwargs: Any,
     ) -> httpx.Response:
-        """Выполнить PUT запрос."""
-        return self._send(
-            method="PUT",
-            url=url,
-            headers=headers,
-            params=params,
-            json=json,
-            retry=retry,
-            **kwargs,
-        )
+        """Выполнить PUT запрос.
+
+        Returns:
+            Ответ от сервера в виде httpx.Response.
+        """
+        return self._send(method="PUT", url=url, headers=headers, params=params, json=json, retry=retry, **kwargs)
 
     def patch(
         self,
@@ -215,19 +213,15 @@ class HttpClient:
         headers: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
-        retry: Callable | None = None,
+        retry: RetryDecorator | None = None,
         **kwargs: Any,
     ) -> httpx.Response:
-        """Выполнить PATCH запрос."""
-        return self._send(
-            method="PATCH",
-            url=url,
-            headers=headers,
-            params=params,
-            json=json,
-            retry=retry,
-            **kwargs,
-        )
+        """Выполнить PATCH запрос.
+
+        Returns:
+            Ответ от сервера в виде httpx.Response.
+        """
+        return self._send(method="PATCH", url=url, headers=headers, params=params, json=json, retry=retry, **kwargs)
 
     def delete(
         self,
@@ -235,16 +229,12 @@ class HttpClient:
         headers: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
-        retry: Callable | None = None,
+        retry: RetryDecorator | None = None,
         **kwargs: Any,
     ) -> httpx.Response:
-        """Выполнить DELETE запрос."""
-        return self._send(
-            method="DELETE",
-            url=url,
-            headers=headers,
-            params=params,
-            json=json,
-            retry=retry,
-            **kwargs,
-        )
+        """Выполнить DELETE запрос.
+
+        Returns:
+            Ответ от сервера в виде httpx.Response.
+        """
+        return self._send(method="DELETE", url=url, headers=headers, params=params, json=json, retry=retry, **kwargs)

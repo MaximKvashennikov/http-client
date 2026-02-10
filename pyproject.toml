@@ -1,0 +1,99 @@
+[project]
+name = "pt-http-client"
+version = "0.1.1"
+description = "API библиотека на базе httpx"
+authors = [{name = "Maksim Kvashennikov"}]
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+keywords = ["api", "client", "httpx"]
+
+dependencies = [
+    "allure-pytest>=2.13.2,<3.0.0",
+    "curlify2==2.0.0",
+    "httpx>=0.28.1,<1.0.0",
+    "tenacity>=9.0.0,<10.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit==4.3.0",
+    "ruff==0.11.10",
+    "mypy==1.15.0",
+]
+
+# ============================================
+# Build Configuration
+# ============================================
+
+[tool.hatch.build.targets.sdist]
+include = ["src/pt_http_client"]
+
+[tool.hatch.build.targets.wheel]
+include = ["src/pt_http_client"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/pt_http_client" = "pt_http_client"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# ============================================
+# Linters Configuration
+# ============================================
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+preview = true
+select = [
+    "B",
+    "C4",
+    "C90",
+    "PL",
+    "N",
+    "E",
+    "F",
+    "W",
+    "I",
+    "D",
+    "DOC",
+    "UP",
+    "ANN",
+    "S",
+    "COM",
+    "RUF",
+    "YTT",
+]
+ignore = [
+    "D100",
+    "D104",
+    "D105",
+    "D203",
+    "D212",
+    "PLR6301",
+    "ANN401",
+    "RUF002",
+    "COM812",
+    "RUF001",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.ruff.lint.pydocstyle]
+ignore-decorators = ["typing.overload"]
+convention = "google"
+
+[tool.ruff.lint.pylint]
+max-args = 8
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true
+disallow_subclassing_any = false
+show_error_codes = true
+python_version = "3.13"

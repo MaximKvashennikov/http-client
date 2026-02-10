@@ -1,7 +1,9 @@
-import allure
 import json
+
+import allure
 import httpx
-from core.event_hooks.abstract_hook_handler import AbstractHookHandler
+
+from .abstract_hook_handler import AbstractHookHandler
 
 
 class AllureHandler(AbstractHookHandler):
@@ -9,7 +11,6 @@ class AllureHandler(AbstractHookHandler):
 
     def request_hook(self, request: httpx.Request) -> None:
         """Хук для обработки запроса."""
-
         body = request.content.decode("utf-8")
         try:
             body = json.loads(body)
